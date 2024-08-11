@@ -149,18 +149,6 @@ abstract contract BaseV4Hook is BaseHook, ProtocolFees, NoDelegateCall, ERC6909C
         return _settle(msg.sender);
     }
 
-    function settleFor(address recipient) external payable onlyWhenUnlocked returns (uint256 paid) {
-        return _settle(recipient);
-    }
-
-    function clear(Currency currency, uint256 amount) external onlyWhenUnlocked {
-        int256 current = currency.getDelta(msg.sender);
-        // Because input is `uint256`, only positive amounts can be cleared.
-        int128 amountDelta = amount.toInt128();
-        if (amountDelta != current) IPoolManager.MustClearExactPositiveDelta.selector.revertWith();
-        _accountDelta(currency, -(amountDelta), msg.sender);
-    }
-
     function updateDynamicLPFee(PoolKey memory key, uint24 newDynamicLPFee) external {
         if (!key.fee.isDynamicFee() || msg.sender != address(key.hooks)) {
             IPoolManager.UnauthorizedDynamicLPFeeUpdate.selector.revertWith();
@@ -264,7 +252,7 @@ abstract contract BaseV4Hook is BaseHook, ProtocolFees, NoDelegateCall, ERC6909C
             afterSwap: false,
             beforeDonate: false,
             afterDonate: false,
-            beforeSwapReturnDelta: false, // -- enable custom curve by skipping poolmanager swap -- //
+            beforeSwapReturnDelta: true, // -- enable custom curve by skipping poolmanager swap -- //
             afterSwapReturnDelta: false,
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
