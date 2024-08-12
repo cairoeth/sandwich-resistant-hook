@@ -1,35 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {BaseHook} from "v4-periphery/src/base/hooks/BaseHook.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {Pool} from "v4-core/src/libraries/Pool.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {Position} from "v4-core/src/libraries/Position.sol";
-import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {TickMath} from "v4-core/src/libraries/TickMath.sol";
-import {NoDelegateCall} from "v4-core/src/NoDelegateCall.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.sol";
-import {ProtocolFees} from "v4-core/src/ProtocolFees.sol";
-import {ERC6909Claims} from "v4-core/src/ERC6909Claims.sol";
-import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
-import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {Lock} from "v4-core/src/libraries/Lock.sol";
-import {CurrencyDelta} from "v4-core/src/libraries/CurrencyDelta.sol";
-import {NonZeroDeltaCount} from "v4-core/src/libraries/NonZeroDeltaCount.sol";
-import {CurrencyReserves} from "v4-core/src/libraries/CurrencyReserves.sol";
-import {Extsload} from "v4-core/src/Extsload.sol";
-import {Exttload} from "v4-core/src/Exttload.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {BaseV4Hook} from "base-v4-hook/BaseV4Hook.sol";
+import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
-import {BaseV4Hook} from "src/BaseV4Hook.sol";
+import {Currency} from "v4-core/src/types/Currency.sol";
 
-contract srAMMHook is BaseV4Hook {
+/// @notice Sandwich resistant hook with v4-like liquidity and swap logic
+/// @author cairoeth <https://github.com/cairoeth>
+contract srHook is BaseV4Hook {
     using PoolIdLibrary for PoolKey;
     using Pool for *;
     using CustomRevert for bytes4;

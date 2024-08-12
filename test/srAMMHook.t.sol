@@ -1,11 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import {Test} from "forge-std/Test.sol";
-import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {FeeTakingHook} from "v4-core/src/test/FeeTakingHook.sol";
-import {srAMMHook} from "src/srAMMHook.sol";
+import {srHook} from "src/srHook.sol";
 import {DeltaReturningHook} from "v4-core/src/test/DeltaReturningHook.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
@@ -19,10 +18,10 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Pool} from "v4-core/src/libraries/Pool.sol";
 import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
 
-contract srAMMHookTest is Test, Deployers, GasSnapshot {
+contract srHookTest is Test, Deployers {
     using SafeCast for *;
 
-    srAMMHook hook;
+    srHook hook;
     PoolKey _key;
     PoolModifyLiquidityTest _modifyLiquidityRouter;
 
@@ -34,8 +33,8 @@ contract srAMMHookTest is Test, Deployers, GasSnapshot {
         address hookAddr = address(
             uint160(Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG)
         );
-        deployCodeTo("srAMMHook.sol:srAMMHook", abi.encode(0, manager), hookAddr);
-        hook = srAMMHook(hookAddr);
+        deployCodeTo("srHook.sol:srHook", abi.encode(0, manager), hookAddr);
+        hook = srHook(hookAddr);
 
         _key = PoolKey(currency0, currency1, 100, 2, IHooks(address(hook)));
         hook.initialize(_key, SQRT_PRICE_1_1, ZERO_BYTES);
@@ -70,6 +69,5 @@ contract srAMMHookTest is Test, Deployers, GasSnapshot {
             sqrtPriceLimitX96: SQRT_PRICE_1_2
         });
         swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
-        snapLastCall("swap CA custom curve + swap noop");
     }
 }
