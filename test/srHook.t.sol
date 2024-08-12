@@ -26,7 +26,6 @@ contract srHookTest is Test, Deployers {
     PoolModifyLiquidityTest _modifyLiquidityRouter;
 
     function setUp() public {
-        // initializeManagerRoutersAndPoolsWithLiq(IHooks(address(0)));
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
 
@@ -47,14 +46,13 @@ contract srHookTest is Test, Deployers {
         initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
     }
 
-    function testModifyLiquidity() public {
+    function test_modifyLiquidity() public {
         _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
     }
 
-    function testSwap() public {
-        // add liquidity
+    function test_swap_exactInput() public {
+        // add liquidity to hook and poolmanager
         _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
-        // init poolmanager pool
         initPool(currency0, currency1, IHooks(address(hook)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
 
         uint256 balanceBefore0 = currency0.balanceOf(address(this));
@@ -69,5 +67,32 @@ contract srHookTest is Test, Deployers {
             sqrtPriceLimitX96: SQRT_PRICE_1_2
         });
         swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+
+        // 14 is fee taken by pool
+        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
+        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + (amountToSwap - 14), "amount 1");
+    }
+
+    function test_swap_exactOutput() public {
+        // add liquidity to hook and poolmanager
+        _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
+        initPool(currency0, currency1, IHooks(address(hook)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
+
+        uint256 balanceBefore0 = currency0.balanceOf(address(this));
+        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+
+        uint256 amountToSwap = 123456;
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(amountToSwap),
+            sqrtPriceLimitX96: SQRT_PRICE_1_2
+        });
+        swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+
+        // 14 is fee taken by pool
+        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
+        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + (amountToSwap - 14), "amount 1");
     }
 }

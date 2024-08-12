@@ -58,24 +58,17 @@ contract srHook is BaseV4Hook {
 
         _accountPoolBalanceDelta(key, swapDelta, msg.sender);
 
-        {
-            (Currency inputCurrency, Currency outputCurrency) =
-                params.zeroForOne ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
+        poolManager.take(key.currency0, address(this), uint256(uint128(-swapDelta.amount0())));
+        key.currency1.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
 
-            poolManager.take(
-                inputCurrency,
-                address(this),
-                params.amountSpecified < 0 ? uint256(-params.amountSpecified) : uint256(params.amountSpecified)
-            );
-            outputCurrency.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
+        bool exactInput = params.amountSpecified < 0;
+        BeforeSwapDelta hookDelta;
+        if (exactInput) {
+            hookDelta = toBeforeSwapDelta(-swapDelta.amount0(), -swapDelta.amount1());
+        } else {
+            // TODO
         }
 
-        uint256 amountIn =
-            params.amountSpecified < 0 ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
-
-        // return -amountSpecified as specified to no-op the concentrated liquidity swap
-        BeforeSwapDelta hookDelta =
-            toBeforeSwapDelta(int128(int256(amountIn)), int128(-int256(uint256(uint128(swapDelta.amount1())))));
         return (IHooks.beforeSwap.selector, hookDelta, 0);
     }
 
@@ -87,7 +80,9 @@ contract srHook is BaseV4Hook {
         (BalanceDelta delta, uint256 feeForProtocol, uint24 swapFee, Pool.SwapState memory state) = pool.swap(params);
 
         // the fee is on the input currency
-        if (feeForProtocol > 0) _updateProtocolFees(inputCurrency, feeForProtocol);
+        if (feeForProtocol > 0) {
+            _updateProtocolFees(inputCurrency, feeForProtocol);
+        }
 
         // event is emitted before the afterSwap call to ensure events are always emitted in order
         emit IPoolManager.Swap(
