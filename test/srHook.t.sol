@@ -43,56 +43,126 @@ contract srHookTest is Test, Deployers {
         ERC20(Currency.unwrap(currency0)).approve(address(_modifyLiquidityRouter), type(uint256).max);
         ERC20(Currency.unwrap(currency1)).approve(address(_modifyLiquidityRouter), type(uint256).max);
 
-        initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
+        (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
+
+        vm.label(Currency.unwrap(currency0), "currency0");
+        vm.label(Currency.unwrap(currency1), "currency1");
     }
 
+    /// @notice Unit test adding liquidity to hook.
     function test_modifyLiquidity() public {
         _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
     }
 
-    function test_swap_exactInput() public {
+    /// @notice Unit test for a single swap, not zero for one.
+    function test_swap_single_notZeroForOne() public {
         // add liquidity to hook and poolmanager
-        _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
+        _modifyLiquidityRouter.modifyLiquidity(
+            _key,
+            IPoolManager.ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: 0}),
+            ZERO_BYTES
+        );
         initPool(currency0, currency1, IHooks(address(hook)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
 
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+        uint256 amountToSwap = 1e15;
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MAX_PRICE_LIMIT
+        });
+        BalanceDelta hookDelta = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+        BalanceDelta nonHookdelta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
-        uint256 amountToSwap = 123456;
+        assertEq(hookDelta.amount0(), hookDelta.amount0(), "amount0");
+        assertEq(hookDelta.amount1(), hookDelta.amount1(), "amount1");
+    }
+
+    /// @notice Unit test for a single swap, zero for one.
+    function test_swap_single_zeroForOne() public {
+        // add liquidity to hook and poolmanager
+        _modifyLiquidityRouter.modifyLiquidity(
+            _key,
+            IPoolManager.ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: 0}),
+            ZERO_BYTES
+        );
+        initPool(currency0, currency1, IHooks(address(hook)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
+
+        uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
             amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: SQRT_PRICE_1_2
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
         });
-        swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+        BalanceDelta hookDelta = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+        BalanceDelta nonHookdelta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
-        // 14 is fee taken by pool
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + (amountToSwap - 14), "amount 1");
+        assertEq(hookDelta.amount0(), hookDelta.amount0(), "amount0");
+        assertEq(hookDelta.amount1(), hookDelta.amount1(), "amount1");
     }
 
-    function test_swap_exactOutput() public {
+    /// @notice Unit test for a failed sandwich attack using the hook.
+    function test_swap_failedSandwich() public {
         // add liquidity to hook and poolmanager
-        _modifyLiquidityRouter.modifyLiquidity(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
+        _modifyLiquidityRouter.modifyLiquidity(
+            _key,
+            IPoolManager.ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: 0}),
+            ZERO_BYTES
+        );
         initPool(currency0, currency1, IHooks(address(hook)), 100, SQRT_PRICE_1_1, ZERO_BYTES);
 
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
-
-        uint256 amountToSwap = 123456;
+        uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
-            amountSpecified: int256(amountToSwap),
-            sqrtPriceLimitX96: SQRT_PRICE_1_2
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
         });
+        // buy currency0 for currency1, front run
+        BalanceDelta delta = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+
+        // sandwiched buy currency0 for currency1
         swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
 
-        // 14 is fee taken by pool
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + (amountToSwap - 14), "amount 1");
+        // sell currency1 for currency0, front run
+        params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: -int256(delta.amount1()),
+            sqrtPriceLimitX96: MAX_PRICE_LIMIT
+        });
+        BalanceDelta deltaEnd = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+
+        assertLe(deltaEnd.amount0(), -delta.amount0(), "front runner profit");
+    }
+
+    /// @notice Unit test for a successful sandwich attack without using the hook.
+    function test_swap_successfulSandwich() public {
+        uint256 amountToSwap = 1e15;
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
+        // buy currency0 for currency1, front run
+        BalanceDelta delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        // sandwiched buy currency0 for currency1
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        // sell currency1 for currency0, front run
+        params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: -int256(delta.amount1()),
+            sqrtPriceLimitX96: MAX_PRICE_LIMIT
+        });
+        BalanceDelta deltaEnd = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        assertGe(deltaEnd.amount0(), -delta.amount0(), "front runner loss");
     }
 }
