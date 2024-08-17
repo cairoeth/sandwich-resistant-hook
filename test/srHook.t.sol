@@ -76,7 +76,7 @@ contract srHookTest is Test, Deployers {
         BalanceDelta nonHookdelta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         assertEq(hookDelta.amount0(), hookDelta.amount0(), "amount0");
-        assertEq(hookDelta.amount1(), hookDelta.amount1(), "amount1");
+        assertEq(nonHookdelta.amount1(), nonHookdelta.amount1(), "amount1");
     }
 
     /// @notice Unit test for a single swap, zero for one.
@@ -101,7 +101,7 @@ contract srHookTest is Test, Deployers {
         BalanceDelta nonHookdelta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         assertEq(hookDelta.amount0(), hookDelta.amount0(), "amount0");
-        assertEq(hookDelta.amount1(), hookDelta.amount1(), "amount1");
+        assertEq(nonHookdelta.amount1(), nonHookdelta.amount1(), "amount1");
     }
 
     /// @notice Unit test for a failed sandwich attack using the hook.
