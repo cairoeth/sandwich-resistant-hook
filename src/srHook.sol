@@ -28,8 +28,17 @@ contract srHook is BaseV4Hook {
 
     Checkpoint private _lastCheckpoint;
 
+    /// @notice Sets the constant for protocol fees and base hook.
+    /// @param controllerGasLimit The gas limit for the controller.
+    /// @param _poolManager The pool manager contract.
     constructor(uint256 controllerGasLimit, IPoolManager _poolManager) BaseV4Hook(controllerGasLimit, _poolManager) {}
 
+    /// @dev Execute swap with custom logic
+    /// @param key The key for the pool
+    /// @param params The parameters for the swap
+    /// @return bytes4 The function selector for the hook
+    /// @return BeforeSwapDelta The hook's delta in specified and unspecified currencies. Positive: the hook is owed/took currency, negative: the hook owes/sent currency
+    /// @return uint24 Optionally override the lp fee, only used if three conditions are met: 1. the Pool has a dynamic fee, 2. the value's 2nd highest bit is set (23rd bit, 0x400000), and 3. the value is less than or equal to the maximum fee (1 million)
     function _beforeSwap(address, PoolKey calldata key, Pool.SwapParams memory params)
         internal
         override
@@ -39,7 +48,6 @@ contract srHook is BaseV4Hook {
         uint32 blockNumber = uint32(block.number);
         int24 tickBefore = 0;
         Pool.State storage pool = _getPool(id);
-        // Pool.State storage tempPool = _lastCheckpoint.state;
 
         bool newBlock = _lastCheckpoint.blockNumber != blockNumber;
         if (newBlock) {
@@ -51,7 +59,7 @@ contract srHook is BaseV4Hook {
 
         {
             Currency inputCurrency = params.zeroForOne ? key.currency0 : key.currency1;
-            // use base pool swap delta
+            // swap base pool only if first transaction in new block, otherwise swap both temporary and base pool
             if (newBlock) {
                 swapDelta = _swap(pool, id, params, inputCurrency, true);
             } else {
@@ -66,31 +74,27 @@ contract srHook is BaseV4Hook {
 
         _accountPoolBalanceDelta(key, swapDelta, msg.sender);
 
-        {
-            // net tokens from and to the pool
-            if (params.zeroForOne) {
-                poolManager.take(key.currency0, address(this), uint256(uint128(-swapDelta.amount0())));
-                key.currency1.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
-            } else {
-                poolManager.take(key.currency1, address(this), uint256(uint128(-swapDelta.amount1())));
-                key.currency0.settle(poolManager, address(this), uint256(uint128(swapDelta.amount0())), false);
-            }
+        // net tokens from and to the pool
+        if (params.zeroForOne) {
+            poolManager.take(key.currency0, address(this), uint256(uint128(-swapDelta.amount0())));
+            key.currency1.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
+        } else {
+            poolManager.take(key.currency1, address(this), uint256(uint128(-swapDelta.amount1())));
+            key.currency0.settle(poolManager, address(this), uint256(uint128(swapDelta.amount0())), false);
         }
 
-        {
-            // create temporary pool state for new block
-            if (newBlock) {
-                int24 tickAfter = pool.slot0.tick();
-                _lastCheckpoint.blockNumber = blockNumber;
-                // deep copy only values that are used and change in swap logic
-                _lastCheckpoint.state.slot0 = pool.slot0;
-                _lastCheckpoint.state.feeGrowthGlobal0X128 = pool.feeGrowthGlobal0X128;
-                _lastCheckpoint.state.feeGrowthGlobal1X128 = pool.feeGrowthGlobal1X128;
-                _lastCheckpoint.state.liquidity = pool.liquidity;
-                // iterate over ticks
-                for (int24 tick = tickBefore; tick < tickAfter; tick += key.tickSpacing) {
-                    _lastCheckpoint.state.ticks[tick] = pool.ticks[tick];
-                }
+        // create temporary pool state for new block
+        if (newBlock) {
+            int24 tickAfter = pool.slot0.tick();
+            _lastCheckpoint.blockNumber = blockNumber;
+            // deep copy only values that are used and change in swap logic
+            _lastCheckpoint.state.slot0 = pool.slot0;
+            _lastCheckpoint.state.feeGrowthGlobal0X128 = pool.feeGrowthGlobal0X128;
+            _lastCheckpoint.state.feeGrowthGlobal1X128 = pool.feeGrowthGlobal1X128;
+            _lastCheckpoint.state.liquidity = pool.liquidity;
+            // iterate over ticks
+            for (int24 tick = tickBefore; tick < tickAfter; tick += key.tickSpacing) {
+                _lastCheckpoint.state.ticks[tick] = pool.ticks[tick];
             }
         }
 
@@ -114,7 +118,7 @@ contract srHook is BaseV4Hook {
         // return delta;
         (BalanceDelta delta, uint256 feeForProtocol, uint24 swapFee, Pool.SwapState memory state) = pool.swap(params);
 
-        // the fee is on the input currency
+        // apply fee on the input currency only for applied swap
         if (takeFee && feeForProtocol > 0) _updateProtocolFees(inputCurrency, feeForProtocol);
 
         // event is emitted before the afterSwap call to ensure events are always emitted in order
