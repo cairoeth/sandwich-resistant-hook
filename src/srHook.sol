@@ -29,6 +29,7 @@ contract srHook is BaseV4Hook {
     struct Checkpoint {
         uint32 blockNumber;
         Slot0 slot0;
+        Pool.State state;
     }
 
     Checkpoint private _lastCheckpoint;
@@ -40,42 +41,65 @@ contract srHook is BaseV4Hook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        if (params.amountSpecified == 0) {
-            IPoolManager.SwapAmountCannotBeZero.selector.revertWith();
-        }
         PoolId id = key.toId();
+        uint32 blockNumber = uint32(block.number);
+        int24 tickBefore = 0;
         Pool.State storage pool = _getPool(id);
-        pool.checkPoolInitialized();
+        Pool.State storage tempPool = _lastCheckpoint.state;
 
-        {
-            uint32 blockNumber = uint32(block.number);
-            if (_lastCheckpoint.blockNumber != blockNumber) {
-                _lastCheckpoint = Checkpoint(blockNumber, pool.slot0);
-            } else {
-                // if checkpoint exists and it's not zeroForOne, make bid price constant
-                if (!params.zeroForOne) {
-                    pool.slot0 = _lastCheckpoint.slot0;
-                }
+        bool newBlock = _lastCheckpoint.blockNumber != blockNumber;
+        if (newBlock) {
+            tickBefore = pool.slot0.tick();
+            _lastCheckpoint.slot0 = pool.slot0;
+        } else {
+            if (!params.zeroForOne) {
+                tempPool.slot0 = _lastCheckpoint.slot0;
             }
         }
 
         BalanceDelta swapDelta;
 
         {
-            // execute swap, account protocol fees, and emit swap event
-            // _swap is needed to avoid stack too deep error
-            swapDelta = _swap(
-                pool,
-                id,
-                Pool.SwapParams({
-                    tickSpacing: key.tickSpacing,
-                    zeroForOne: params.zeroForOne,
-                    amountSpecified: params.amountSpecified,
-                    sqrtPriceLimitX96: params.sqrtPriceLimitX96,
-                    lpFeeOverride: 0
-                }),
-                params.zeroForOne ? key.currency0 : key.currency1 // input token
-            );
+            // use base pool swap delta
+            if (newBlock) {
+                swapDelta = _swap(
+                    pool,
+                    id,
+                    Pool.SwapParams({
+                        tickSpacing: key.tickSpacing,
+                        zeroForOne: params.zeroForOne,
+                        amountSpecified: params.amountSpecified,
+                        sqrtPriceLimitX96: params.sqrtPriceLimitX96,
+                        lpFeeOverride: 0
+                    }),
+                    params.zeroForOne ? key.currency0 : key.currency1 // input token
+                );
+            } else {
+                swapDelta = _swap(
+                    tempPool,
+                    id,
+                    Pool.SwapParams({
+                        tickSpacing: key.tickSpacing,
+                        zeroForOne: params.zeroForOne,
+                        amountSpecified: params.amountSpecified,
+                        sqrtPriceLimitX96: params.sqrtPriceLimitX96,
+                        lpFeeOverride: 0
+                    }),
+                    params.zeroForOne ? key.currency0 : key.currency1 // input token
+                );
+                _swap(
+                    pool,
+                    id,
+                    Pool.SwapParams({
+                        tickSpacing: key.tickSpacing,
+                        zeroForOne: params.zeroForOne,
+                        amountSpecified: params.amountSpecified,
+                        sqrtPriceLimitX96: params.sqrtPriceLimitX96,
+                        lpFeeOverride: 0
+                    }),
+                    params.zeroForOne ? key.currency0 : key.currency1 // input token
+                );
+            }
         }
 
         _accountPoolBalanceDelta(key, swapDelta, msg.sender);
@@ -86,20 +110,29 @@ contract srHook is BaseV4Hook {
             poolManager.take(key.currency0, address(this), uint256(uint128(-swapDelta.amount0())));
             key.currency1.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
 
-            this.modifyLiquidity(
-                key,
-                IPoolManager.ModifyLiquidityParams(
-                    _lastCheckpoint.slot0.tick() - 2, _lastCheckpoint.slot0.tick(), -swapDelta.amount0(), bytes32(0)
-                ),
-                ""
-            );
-
             hookDelta = toBeforeSwapDelta(-swapDelta.amount0(), -swapDelta.amount1());
         } else {
             poolManager.take(key.currency1, address(this), uint256(uint128(-swapDelta.amount1())));
             key.currency0.settle(poolManager, address(this), uint256(uint128(swapDelta.amount0())), false);
 
             hookDelta = toBeforeSwapDelta(-swapDelta.amount1(), -swapDelta.amount0());
+        }
+
+        // create temporary pool state for new block
+        if (newBlock) {
+            int24 tickAfter = pool.slot0.tick();
+            console.log("tickBefore", tickBefore);
+            console.log("tickAfter", tickAfter);
+            _lastCheckpoint.blockNumber = blockNumber;
+            // deep copy only values that are used and change in swap logic
+            _lastCheckpoint.state.slot0 = pool.slot0;
+            _lastCheckpoint.state.feeGrowthGlobal0X128 = pool.feeGrowthGlobal0X128;
+            _lastCheckpoint.state.feeGrowthGlobal1X128 = pool.feeGrowthGlobal1X128;
+            _lastCheckpoint.state.liquidity = pool.liquidity;
+            // iterate over ticks
+            for (int24 tick = tickBefore; tick < tickAfter; tick += key.tickSpacing) {
+                _lastCheckpoint.state.ticks[tick] = pool.ticks[tick];
+            }
         }
 
         return (IHooks.beforeSwap.selector, hookDelta, 0);

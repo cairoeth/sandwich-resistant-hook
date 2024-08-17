@@ -137,6 +137,17 @@ contract srHookTest is Test, Deployers {
         BalanceDelta deltaEnd = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
 
         assertLe(deltaEnd.amount0(), -delta.amount0(), "front runner profit");
+
+        vm.roll(block.number + 1);
+
+        params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
+
+        delta = swapRouter.swap(_key, params, testSettings, ZERO_BYTES);
+        assertGe(deltaEnd.amount0(), 996911360539219, "state did not reset");
     }
 
     /// @notice Unit test for a successful sandwich attack without using the hook.
@@ -164,5 +175,13 @@ contract srHookTest is Test, Deployers {
         BalanceDelta deltaEnd = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         assertGe(deltaEnd.amount0(), -delta.amount0(), "front runner loss");
+
+        params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
+
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
     }
 }
