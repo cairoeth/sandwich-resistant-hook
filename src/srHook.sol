@@ -50,6 +50,7 @@ contract srHook is BaseV4Hook {
         Pool.State storage pool = _getPool(id);
 
         bool newBlock = _lastCheckpoint.blockNumber != blockNumber;
+        // update the top-of-block `slot0` if new block
         if (newBlock) {
             tickBefore = pool.slot0.tick();
             _lastCheckpoint.slot0 = pool.slot0;
@@ -59,11 +60,12 @@ contract srHook is BaseV4Hook {
 
         {
             Currency inputCurrency = params.zeroForOne ? key.currency0 : key.currency1;
-            // swap base pool only if first transaction in new block, otherwise swap both temporary and base pool
+            // swap using base pool state only if first swap in new block, otherwise swap with both temporary and base pool states
             if (newBlock) {
                 swapDelta = _swap(pool, id, params, inputCurrency, true);
             } else {
                 Pool.State storage tempPool = _lastCheckpoint.state;
+                // constant bid price
                 if (!params.zeroForOne) {
                     tempPool.slot0 = _lastCheckpoint.slot0;
                 }
@@ -74,7 +76,7 @@ contract srHook is BaseV4Hook {
 
         _accountPoolBalanceDelta(key, swapDelta, msg.sender);
 
-        // net tokens from and to the pool
+        // net tokens from and to the pool, based on the swap delta from the base or temporary pool state
         if (params.zeroForOne) {
             poolManager.take(key.currency0, address(this), uint256(uint128(-swapDelta.amount0())));
             key.currency1.settle(poolManager, address(this), uint256(uint128(swapDelta.amount1())), false);
@@ -83,7 +85,7 @@ contract srHook is BaseV4Hook {
             key.currency0.settle(poolManager, address(this), uint256(uint128(swapDelta.amount0())), false);
         }
 
-        // create temporary pool state for new block
+        // after the first swap in block, initialize the temporary pool state
         if (newBlock) {
             int24 tickAfter = pool.slot0.tick();
             _lastCheckpoint.blockNumber = blockNumber;
@@ -113,18 +115,27 @@ contract srHook is BaseV4Hook {
         PoolId id,
         Pool.SwapParams memory params,
         Currency inputCurrency,
-        bool takeFee
+        bool swapUsed
     ) internal returns (BalanceDelta) {
         // return delta;
         (BalanceDelta delta, uint256 feeForProtocol, uint24 swapFee, Pool.SwapState memory state) = pool.swap(params);
 
         // apply fee on the input currency only for applied swap
-        if (takeFee && feeForProtocol > 0) _updateProtocolFees(inputCurrency, feeForProtocol);
+        if (swapUsed && feeForProtocol > 0) _updateProtocolFees(inputCurrency, feeForProtocol);
 
-        // event is emitted before the afterSwap call to ensure events are always emitted in order
-        emit IPoolManager.Swap(
-            id, msg.sender, delta.amount0(), delta.amount1(), state.sqrtPriceX96, state.liquidity, state.tick, swapFee
-        );
+        // emit event only if the swap delta is used
+        if (swapUsed) {
+            emit IPoolManager.Swap(
+                id,
+                msg.sender,
+                delta.amount0(),
+                delta.amount1(),
+                state.sqrtPriceX96,
+                state.liquidity,
+                state.tick,
+                swapFee
+            );
+        }
 
         return delta;
     }
