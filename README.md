@@ -33,7 +33,7 @@ The main gas trade-offs arise from initializing the temporary pool state, and ex
 This repository is inspired by or directly modified from many sources, primarily:
 
 - [A Sandwich Resistant AMM](https://www.umbraresearch.xyz/writings/sandwich-resistant-amm)
-- [v4-base-hook](https://github.com/cairoeth/v4-base-hook)
+- [base-v4-hook](https://github.com/cairoeth/base-v4-hook)
 
 [ci-badge]: https://github.com/cairoeth/sandwich-resistant-hook/actions/workflows/test.yml/badge.svg
 [ci-url]: https://github.com/cairoeth/sandwich-resistant-hook/actions/workflows/test.yml
