@@ -4,8 +4,6 @@
 
 Uniswap v4 hook that is resistant to atomic sandwich attacks.
 
-> This is **experimental software** and is provided on an "as is" and "as available" basis. We **do not give any warranties** and **will not be liable for any losses** incurred through any use of this code base.
-
 ## Installation
 
 To install with [**Foundry**](https://github.com/foundry-rs/foundry):
