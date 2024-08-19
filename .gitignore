@@ -12,3 +12,5 @@ docs/
 
 # Dotenv file
 .env
+venv/
+.DS_Store
