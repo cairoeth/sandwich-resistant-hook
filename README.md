@@ -22,6 +22,8 @@ In addition to the points noted in the [`Considerations`](https://www.umbraresea
 
 ## Implementation
 
+https://github.com/user-attachments/assets/9be3d43c-973d-4f95-8e18-486bd897207f
+
 The design is implemented on top of [`base-v4-hook`](https://github.com/cairoeth/base-v4-hook) to act as a no-op hook, which allows to skip the swap logic from the Uniswap v4 `PoolManager` contract, while implementing v4-like liquidity logic. In order to be able to reset the pool state after each slot window, the hook tracks the base pool state, and a temporary pool state. Before executing the first swap in a slot window, the hook checkpoints the initial `slot0` from the base pool, which contains the current price, tick, protocol fee, and lp fee. Then, after executing the first swap on the base pool state, the hook initializes the temporary pool state as a copy of the base pool state. Subsequent swaps in the same slot window execute the swap on both the base and temporary pool states, but the token deltas are applied only based on the output from the temporary pool state. Depending on the swap direction, the hook applies the checkpointed `slot0` to the temporary pool state to ensure that the bid price remains constant and that liquidity on the bid tick increases as buy orders are executed.
 
 In the first swap of the next slot window, the hook checkpoints the new `slot0` from the base pool state, executes the swap on the base pool state, and re-initializes the temporary pool state.
