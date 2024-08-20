@@ -10,17 +10,11 @@ import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {ERC20} from "solmate/src/tokens/ERC20.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+// import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 
 contract srHookTest is Test, Deployers {
-    using PoolIdLibrary for PoolKey;
-    using StateLibrary for IPoolManager;
-
     srHook hook;
     PoolKey noHookKey;
 
