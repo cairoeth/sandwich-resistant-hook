@@ -117,25 +117,18 @@ contract srHook is BaseHook {
     ) external override returns (bytes4, int128) {
         int128 feeAmount = 0;
         if (BalanceDelta.unwrap(_fairDelta) != int256(0)) {
-            Currency currency;
             if (delta.amount0() == _fairDelta.amount0() && delta.amount1() > _fairDelta.amount1()) {
                 feeAmount = delta.amount1() - _fairDelta.amount1();
-                currency = key.currency1;
+                poolManager.donate(key, 0, uint256(uint128(feeAmount)), "");
             }
 
             if (delta.amount1() == _fairDelta.amount1() && delta.amount0() > _fairDelta.amount0()) {
                 feeAmount = delta.amount0() - _fairDelta.amount0();
-                currency = key.currency0;
-            }
-
-            if (feeAmount > 0) {
-                poolManager.take(currency, address(this), uint128(feeAmount));
+                poolManager.donate(key, uint256(uint128(feeAmount)), 0, "");
             }
 
             _fairDelta = BalanceDelta.wrap(int256(0));
         }
-
-        // TODO: donate feeAmount to LPs
 
         return (this.afterSwap.selector, feeAmount);
     }
