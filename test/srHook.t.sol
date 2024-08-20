@@ -12,7 +12,6 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-// import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 
 contract srHookTest is Test, Deployers {
     srHook hook;
@@ -101,17 +100,17 @@ contract srHookTest is Test, Deployers {
 
         assertLe(deltaEnd.amount0(), -delta.amount0(), "front runner profit");
 
-        // vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
 
-        // params = IPoolManager.SwapParams({
-        //     zeroForOne: true,
-        //     amountSpecified: -int256(amountToSwap),
-        //     sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        // });
+        params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
 
-        // delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        // // 996911360539219 is obtained from `test_swap_successfulSandwich`
-        // assertEq(delta.amount1(), 996911360539219, "state did not reset");
+        delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        // 997010963116644 is obtained from `test_swap_successfulSandwich`
+        assertEq(delta.amount1(), 997010963116644, "state did not reset");
     }
 
     /// @notice Unit test for a failed sandwich attack using the hook, in the opposite direction.
@@ -140,17 +139,17 @@ contract srHookTest is Test, Deployers {
 
         assertLe(deltaEnd.amount1(), -delta.amount1(), "front runner profit");
 
-        // vm.roll(block.number + 1);
+        vm.roll(block.number + 1);
 
-        // params = IPoolManager.SwapParams({
-        //     zeroForOne: false,
-        //     amountSpecified: -int256(amountToSwap),
-        //     sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        // });
+        params = IPoolManager.SwapParams({
+            zeroForOne: false,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MAX_PRICE_LIMIT
+        });
 
-        // delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-        // // 996911360539219 is obtained from `test_swap_successfulSandwich`
-        // assertEq(delta.amount0(), 996911360539219, "state did not reset");
+        delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        // 997010963116644 is obtained from `test_swap_successfulSandwich`
+        assertEq(delta.amount0(), 997010963116644, "state did not reset");
     }
 
     /// @notice Unit test for a successful sandwich attack without using the hook.
