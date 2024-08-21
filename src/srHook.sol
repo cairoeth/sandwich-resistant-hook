@@ -48,15 +48,9 @@ contract srHook is BaseHook {
         onlyByPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        uint32 blockNumber = uint32(block.number);
-        int24 tickBefore = 0;
-        PoolId poolId = key.toId();
-
-        bool newBlock = _lastCheckpoint.blockNumber != blockNumber;
         // update the top-of-block `slot0` if new block
-        if (newBlock) {
-            _lastCheckpoint.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
-            tickBefore = _lastCheckpoint.slot0.tick();
+        if (_lastCheckpoint.blockNumber != uint32(block.number)) {
+            _lastCheckpoint.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(key.toId())));
         } else {
             // constant bid price
             if (!params.zeroForOne) {
@@ -75,31 +69,6 @@ contract srHook is BaseHook {
             );
         }
 
-        // after the first swap in block, initialize the temporary pool state
-        if (newBlock) {
-            (uint256 feeGrowthGlobal0, uint256 feeGrowthGlobal1) = poolManager.getFeeGrowthGlobals(poolId);
-            _lastCheckpoint.blockNumber = blockNumber;
-
-            // deep copy only values that are used and change in fair delta calculation
-            _lastCheckpoint.state.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
-            _lastCheckpoint.state.feeGrowthGlobal0X128 = feeGrowthGlobal0;
-            _lastCheckpoint.state.feeGrowthGlobal1X128 = feeGrowthGlobal1;
-            _lastCheckpoint.state.liquidity = poolManager.getLiquidity(poolId);
-
-            // iterate over ticks
-            (, int24 tickAfter,,) = poolManager.getSlot0(poolId);
-            for (int24 tick = tickBefore; tick < tickAfter; tick += key.tickSpacing) {
-                (
-                    uint128 liquidityGross,
-                    int128 liquidityNet,
-                    uint256 feeGrowthOutside0X128,
-                    uint256 feeGrowthOutside1X128
-                ) = poolManager.getTickInfo(poolId, tick);
-                _lastCheckpoint.state.ticks[tick] =
-                    Pool.TickInfo(liquidityGross, liquidityNet, feeGrowthOutside0X128, feeGrowthOutside1X128);
-            }
-        }
-
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -114,7 +83,35 @@ contract srHook is BaseHook {
         IPoolManager.SwapParams calldata,
         BalanceDelta delta,
         bytes calldata
-    ) external override returns (bytes4, int128) {
+    ) external override onlyByPoolManager returns (bytes4, int128) {
+        uint32 blockNumber = uint32(block.number);
+        PoolId poolId = key.toId();
+
+        // after the first swap in block, initialize the temporary pool state
+        if (_lastCheckpoint.blockNumber != blockNumber) {
+            _lastCheckpoint.blockNumber = blockNumber;
+
+            // iterate over ticks
+            (, int24 tickAfter,,) = poolManager.getSlot0(poolId);
+            for (int24 tick = _lastCheckpoint.slot0.tick(); tick < tickAfter; tick += key.tickSpacing) {
+                (
+                    uint128 liquidityGross,
+                    int128 liquidityNet,
+                    uint256 feeGrowthOutside0X128,
+                    uint256 feeGrowthOutside1X128
+                ) = poolManager.getTickInfo(poolId, tick);
+                _lastCheckpoint.state.ticks[tick] =
+                    Pool.TickInfo(liquidityGross, liquidityNet, feeGrowthOutside0X128, feeGrowthOutside1X128);
+            }
+
+            // deep copy only values that are used and change in fair delta calculation
+            _lastCheckpoint.state.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
+            (uint256 feeGrowthGlobal0, uint256 feeGrowthGlobal1) = poolManager.getFeeGrowthGlobals(poolId);
+            _lastCheckpoint.state.feeGrowthGlobal0X128 = feeGrowthGlobal0;
+            _lastCheckpoint.state.feeGrowthGlobal1X128 = feeGrowthGlobal1;
+            _lastCheckpoint.state.liquidity = poolManager.getLiquidity(poolId);
+        }
+
         int128 feeAmount = 0;
         if (BalanceDelta.unwrap(_fairDelta) != int256(0)) {
             if (delta.amount0() == _fairDelta.amount0() && delta.amount1() > _fairDelta.amount1()) {
