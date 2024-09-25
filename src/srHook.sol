@@ -28,8 +28,8 @@ contract srHook is BaseHook {
         Pool.State state;
     }
 
-    Checkpoint private _lastCheckpoint;
-    BalanceDelta private _fairDelta;
+    mapping(PoolId => Checkpoint) private _lastCheckpoints;
+    mapping(PoolId => BalanceDelta) private _fairDeltas;
 
     /// @notice Sets the constants for base hook.
     /// @param _poolManager The pool manager contract.
@@ -48,16 +48,19 @@ contract srHook is BaseHook {
         onlyByPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        PoolId poolId = key.toId();
+        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];
+
         // update the top-of-block `slot0` if new block
         if (_lastCheckpoint.blockNumber != uint32(block.number)) {
-            _lastCheckpoint.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(key.toId())));
+            _lastCheckpoint.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
         } else {
             // constant bid price
             if (!params.zeroForOne) {
                 _lastCheckpoint.state.slot0 = _lastCheckpoint.slot0;
             }
 
-            (_fairDelta,,,) = Pool.swap(
+            (_fairDeltas[poolId],,,) = Pool.swap(
                 _lastCheckpoint.state,
                 Pool.SwapParams({
                     tickSpacing: key.tickSpacing,
@@ -86,6 +89,7 @@ contract srHook is BaseHook {
     ) external override onlyByPoolManager returns (bytes4, int128) {
         uint32 blockNumber = uint32(block.number);
         PoolId poolId = key.toId();
+        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];
 
         // after the first swap in block, initialize the temporary pool state
         if (_lastCheckpoint.blockNumber != blockNumber) {
@@ -112,8 +116,9 @@ contract srHook is BaseHook {
             _lastCheckpoint.state.liquidity = poolManager.getLiquidity(poolId);
         }
 
+        BalanceDelta _fairDelta = _fairDeltas[poolId];
         int128 feeAmount = 0;
-        if (BalanceDelta.unwrap(_fairDelta) != int256(0)) {
+        if (BalanceDelta.unwrap(_fairDelta) != 0) {
             if (delta.amount0() == _fairDelta.amount0() && delta.amount1() > _fairDelta.amount1()) {
                 feeAmount = delta.amount1() - _fairDelta.amount1();
                 poolManager.donate(key, 0, uint256(uint128(feeAmount)), "");
@@ -124,7 +129,7 @@ contract srHook is BaseHook {
                 poolManager.donate(key, uint256(uint128(feeAmount)), 0, "");
             }
 
-            _fairDelta = BalanceDelta.wrap(int256(0));
+            _fairDeltas[poolId] = BalanceDelta.wrap(0);
         }
 
         return (this.afterSwap.selector, feeAmount);
